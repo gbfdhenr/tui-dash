@@ -123,50 +123,11 @@ cargo install tui-dash --git https://github.com/gbfdhenr/tui-dash
 | 标签页 | 功能 | Description |
 |--------|------|-------------|
 | **CPU** | 显示 CPU 使用率和各核心状态 | Display CPU usage and per-core status |
-| **Memory** | 显示内存和交换分区使用情况 | Display memory and swap usage |
-| **Disk** | 显示磁盘使用情况和读写速度 | Display disk usage and I/O speed |
-| **Network** | 显示网络接口流量 | Display network interface traffic |
+| **Memory/内存** | 显示内存和交换分区使用情况 | Display memory and swap usage |
+| **Disk/磁盘** | 显示磁盘使用情况和读写速度 | Display disk usage and I/O speed |
+| **Network/网络** | 显示网络接口流量 | Display network interface traffic |
 | **Docker** | 显示 Docker 容器状态 | Display Docker container status |
-| **Logs** | 查看系统日志 | View system logs |
-
-### 日志类别说明 / Log Categories
-
-在日志标签页中，可以通过左右箭头或点击子页签切换日志类别：
-
-In the Logs tab, you can switch log categories using left/right arrows or clicking sub-tabs:
-
-| 类别 | 描述 | Description |
-|------|------|-------------|
-| **System** | 系统日志（journalctl） | System logs (journalctl) |
-| **Kernel** | 内核日志 | Kernel logs |
-| **Error** | 错误和警告日志 | Error and warning logs |
-| **Docker** | Docker 容器日志 | Docker container logs |
-| **Boot** | 系统引导日志 | Boot logs |
-| **All** | 合并所有日志 | All logs combined |
-
----
-
-## 系统要求 / System Requirements
-
-### 基本要求 / Basic Requirements
-
-- **操作系统**: Linux（日志功能需要 Linux 系统）/ Operating System: Linux (logs feature requires Linux)
-- **Rust 版本**: 1.70 或更高 / Rust version: 1.70 or higher
-- **终端**: 支持 ANSI 颜色的终端 / Terminal: ANSI color support required
-
-### 可选依赖 / Optional Dependencies
-
-- **Docker**: 用于显示 Docker 容器信息 / For displaying Docker container information
-- **journalctl**: 用于读取系统日志（systemd 系统）/ For reading system logs (systemd systems)
-
-### 支持的 Linux 发行版 / Supported Linux Distributions
-
-- Ubuntu / Debian
-- Arch Linux / Manjaro
-- Fedora / RHEL / CentOS
-- openSUSE
-- Kali
-- 其他主流 Linux 发行版 / Other mainstream Linux distributions
+| **Logs/日志** | 查看系统日志 | View system logs |
 
 ---
 
@@ -177,24 +138,6 @@ In the Logs tab, you can switch log categories using left/right arrows or clicki
 **A**: 不行。日志功能依赖 Linux 的 `journalctl` 或 `/var/log/syslog`，仅支持 Linux 系统。
 
 No. The logs feature depends on Linux's `journalctl` or `/var/log/syslog`, and only supports Linux systems.
-
-### Q: Docker 标签页显示错误怎么办？/ What to do if Docker tab shows error?
-
-**A**: 请确保：
-1. Docker 服务正在运行
-2. 当前用户有 Docker 访问权限
-3. Docker 守护进程可访问
-
-Please ensure:
-1. Docker service is running
-2. Current user has Docker access permissions
-3. Docker daemon is accessible
-
-### Q: 如何调整刷新频率？/ How to adjust refresh rate?
-
-**A**: 目前刷新频率固定为 1 秒。如需修改，请编辑 `src/main.rs` 中的 `MIN_UPDATE_INTERVAL` 常量。
-
-Currently the refresh rate is fixed at 1 second. To modify it, edit the `MIN_UPDATE_INTERVAL` constant in `src/main.rs`.
 
 ### Q: 终端显示乱码怎么办？/ What if terminal shows garbled text?
 
