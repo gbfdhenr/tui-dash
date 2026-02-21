@@ -1,0 +1,29 @@
+[package]
+name = "tui-dash"
+version = "1.0.0"
+edition = "2021"
+description = "一个为Linux系统打造的系统监控面板（A terminal UI system monitor dashboard for Linux）"
+license = "MIT"
+
+[[bin]]
+name = "tui-dash"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = { version = "0.26", features = ["all-widgets"] }
+crossterm = "0.27"
+sysinfo = "0.30"
+bollard = "0.20"
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = "0.4"
+tokio = { version = "1", features = ["full"] }
+bytesize = "1.2"
+lazy_static = "1.4"
+reqwest = { version = "0.12", features = ["json"] }
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+once_cell = "1.19"
+futures-util = "0.3"
+textwrap = "0.16"
