@@ -2,7 +2,7 @@
 name = "tui-dash"
 version = "1.0.0"
 edition = "2021"
-description = "一个为Linux系统打造的系统监控面板（A terminal UI system monitor dashboard for Linux）"
+description = "一个系统监控面板，支持 Linux 和 Windows（A terminal UI system monitor dashboard for Linux and Windows）"
 license = "MIT"
 
 [[bin]]
@@ -27,3 +27,14 @@ serde = { version = "1.0", features = ["derive"] }
 once_cell = "1.19"
 futures-util = "0.3"
 textwrap = "0.16"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.57", features = [
+    "Win32_Foundation",
+    "Win32_System_Performance",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_System_Wmi",
+    "Win32_System_EventLog",
+    "Win32_System_Com",
+] }
+wmi = "0.14"
