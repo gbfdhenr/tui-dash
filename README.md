@@ -89,3 +89,50 @@ cargo build --release
 ```bash
 cargo install tui-dash --git https://github.com/gbfdhenr/tui-dash
 ```
+---
+Windows 支持 / Windows Support
+从 1.0.0 版本开始，TUI-Dash 支持 Windows 10/11/Server 2016 及以上版本。在 Windows 上：
+
+CPU、内存、网络、Docker 功能通过跨平台库正常支持。
+
+磁盘读写速度使用 WMI 性能计数器获取。
+
+系统日志功能暂不支持（显示提示信息）。
+
+---
+常见问题 / FAQ
+
+Q: 终端显示乱码怎么办？/ What if terminal shows garbled text?
+
+A: 请确保：
+
+终端支持 UTF-8 编码
+
+终端支持 ANSI 颜色
+
+使用现代终端（如 Alacritty, Kitty, GNOME Terminal, Windows Terminal 等）
+
+Please ensure:
+
+Terminal supports UTF-8 encoding
+
+Terminal supports ANSI colors
+
+Use a modern terminal (e.g., Alacritty, Kitty, GNOME Terminal, Windows Terminal, etc.)
+
+Q: 如何切换语言？/ How to switch language?
+
+A: 程序会自动检测系统语言。可以通过设置环境变量来强制指定语言：
+
+The program automatically detects system language. You can force specify language via environment variables:
+
+```bash
+# 强制使用中文
+export LANG=zh_CN.UTF-8
+./tui-dash
+
+# Force English
+export LANG=en_US.UTF-8
+./tui-dash
+```
+Docker 需要安装 Docker Desktop 并启用，通过命名管道连接。
