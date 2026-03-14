@@ -2,16 +2,19 @@ use crate::i18n;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
-use sysinfo::{Disks, DiskKind};
+use sysinfo::{DiskKind, Disks};
 
 #[derive(Debug)]
 pub struct DiskData {
-    pub disks: Vec<(String, u64, u64, u64, u64)>, // (mount_point, used, total, read_speed, write_speed)
+    pub disks: Vec<(String, u64, u64, u64, u64)>,
     disks_info: Disks,
     last_read_sectors: HashMap<String, u64>,
     last_write_sectors: HashMap<String, u64>,
     last_update_time: std::time::Instant,
-    device_to_mount: HashMap<String, String>, // 设备名到挂载点的映射
+    pub has_warning: bool,
+
+    #[cfg(target_os = "linux")]
+    device_to_mount: HashMap<String, String>,
 }
 
 impl DiskData {
@@ -20,34 +23,53 @@ impl DiskData {
         let mut disks = Vec::new();
         let mut last_read_sectors = HashMap::new();
         let mut last_write_sectors = HashMap::new();
-        
-        // 从 /proc/mounts 读取完整的设备-挂载点映射
+
+        #[cfg(target_os = "linux")]
         let mut device_to_mount = Self::read_device_mount_mapping();
-        
-        // 初始化设备到挂载点的映射
+
         for disk in disks_info.list() {
             if disk.kind() == DiskKind::HDD || disk.kind() == DiskKind::SSD {
-                let mount_point = disk.mount_point()
+                let mount_point = disk
+                    .mount_point()
                     .to_str()
                     .unwrap_or(i18n::t("unknown"))
                     .to_string();
                 let device_name = disk.name().to_string_lossy().to_string();
-                // 如果映射中没有，则添加
-                device_to_mount.entry(device_name).or_insert_with(|| mount_point.clone());
+
+                #[cfg(target_os = "linux")]
+                {
+                    device_to_mount
+                        .entry(device_name)
+                        .or_insert_with(|| mount_point.clone());
+                }
+
                 last_read_sectors.insert(mount_point.clone(), 0);
                 last_write_sectors.insert(mount_point.clone(), 0);
             }
         }
-        
-        // 初始更新
-        Self::update_disks(&disks_info, &mut disks, &last_read_sectors, &last_write_sectors, &device_to_mount, 0.0)?;
-        
-        Ok(Self { 
-            disks_info, 
+
+        #[cfg(target_os = "linux")]
+        Self::update_disks(
+            &disks_info,
+            &mut disks,
+            &last_read_sectors,
+            &last_write_sectors,
+            &device_to_mount,
+            0.0,
+        )?;
+
+        #[cfg(target_os = "windows")]
+        Self::update_disks_windows(&disks_info, &mut disks)?;
+
+        Ok(Self {
+            disks_info,
             disks,
             last_read_sectors,
             last_write_sectors,
             last_update_time: std::time::Instant::now(),
+            has_warning: false,
+
+            #[cfg(target_os = "linux")]
             device_to_mount,
         })
     }
@@ -55,42 +77,51 @@ impl DiskData {
     pub fn update(&mut self) -> Result<()> {
         self.disks.clear();
         self.disks_info.refresh();
+        self.has_warning = false;
 
         let now = std::time::Instant::now();
-        let elapsed_secs = self.last_update_time.elapsed().as_secs_f64();
 
         #[cfg(target_os = "linux")]
         {
-            // 从 /proc/mounts 读取最新的设备-挂载点映射
+            let elapsed_secs = self.last_update_time.elapsed().as_secs_f64();
+
             self.device_to_mount = Self::read_device_mount_mapping();
 
-            // 更新设备到挂载点的映射
             for disk in self.disks_info.list() {
                 if disk.kind() == DiskKind::HDD || disk.kind() == DiskKind::SSD {
-                    let mount_point = disk.mount_point()
+                    let mount_point = disk
+                        .mount_point()
                         .to_str()
                         .unwrap_or(i18n::t("unknown"))
                         .to_string();
                     let device_name = disk.name().to_string_lossy().to_string();
-                    // 如果映射中没有，则添加
-                    self.device_to_mount.entry(device_name).or_insert_with(|| mount_point.clone());
+                    self.device_to_mount
+                        .entry(device_name)
+                        .or_insert_with(|| mount_point.clone());
                 }
             }
 
-            Self::update_disks(&self.disks_info, &mut self.disks, &self.last_read_sectors, &self.last_write_sectors, &self.device_to_mount, elapsed_secs)?;
+            Self::update_disks(
+                &self.disks_info,
+                &mut self.disks,
+                &self.last_read_sectors,
+                &self.last_write_sectors,
+                &self.device_to_mount,
+                elapsed_secs,
+            )?;
 
-            // 更新最后一次的IO统计
             if let Ok(disk_stats) = Self::read_disk_stats() {
                 for (device_name, (read_sectors, write_sectors)) in disk_stats {
-                    // 尝试通过设备名找到挂载点
                     if let Some(mount_point) = self.device_to_mount.get(&device_name).cloned() {
-                        self.last_read_sectors.insert(mount_point.clone(), read_sectors);
-                        self.last_write_sectors.insert(mount_point.clone(), write_sectors);
-                    }
-                    // 如果找不到，使用设备名作为挂载点
-                    else {
-                        self.last_read_sectors.insert(device_name.clone(), read_sectors);
-                        self.last_write_sectors.insert(device_name.clone(), write_sectors);
+                        self.last_read_sectors
+                            .insert(mount_point.clone(), read_sectors);
+                        self.last_write_sectors
+                            .insert(mount_point.clone(), write_sectors);
+                    } else {
+                        self.last_read_sectors
+                            .insert(device_name.clone(), read_sectors);
+                        self.last_write_sectors
+                            .insert(device_name.clone(), write_sectors);
                     }
                 }
             }
@@ -101,90 +132,106 @@ impl DiskData {
             self.update_windows()?;
         }
 
+        for (_mount_point, used, total, _, _) in &self.disks {
+            if *total > 0 {
+                let usage_percent = (*used as f64 / *total as f64) * 100.0;
+                if usage_percent > 90.0 {
+                    self.has_warning = true;
+                    break;
+                }
+            }
+        }
+
         self.last_update_time = now;
         Ok(())
     }
 
     #[cfg(target_os = "linux")]
-    /// 从 /proc/mounts 读取设备到挂载点的映射
     fn read_device_mount_mapping() -> HashMap<String, String> {
         let mut mapping = HashMap::new();
-        
+
         if let Ok(content) = fs::read_to_string("/proc/mounts") {
             for line in content.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
-                    let device = parts[0].to_string();
-                    let mount_point = parts[1].to_string();
-                    // 只添加物理设备
+                    let device = parts.get(0).unwrap_or(&"").to_string();
+                    let mount_point = parts.get(1).unwrap_or(&"").to_string();
                     if device.starts_with("/dev/") {
-                        // 提取设备名（去掉 /dev/ 前缀）
-                        let device_name = device.strip_prefix("/dev/").unwrap_or(&device).to_string();
+                        let device_name =
+                            device.strip_prefix("/dev/").unwrap_or(&device).to_string();
                         mapping.insert(device_name, mount_point);
                     }
                 }
             }
         }
-        
+
         mapping
     }
 
     #[cfg(target_os = "linux")]
     fn update_disks(
-        disks_info: &Disks, 
-        disks: &mut Vec<(String, u64, u64, u64, u64)>, 
+        disks_info: &Disks,
+        disks: &mut Vec<(String, u64, u64, u64, u64)>,
         last_read_sectors: &HashMap<String, u64>,
         last_write_sectors: &HashMap<String, u64>,
         _device_to_mount: &HashMap<String, String>,
         elapsed_secs: f64,
     ) -> Result<()> {
-        // 读取当前磁盘统计
         let current_stats = Self::read_disk_stats()?;
-        
+
+        const MAX_DISK_SPEED: u64 = 10 * 1024 * 1024 * 1024;
+
         for disk in disks_info.list() {
             if disk.kind() == DiskKind::HDD || disk.kind() == DiskKind::SSD {
-                let mount_point = disk.mount_point()
+                let mount_point = disk
+                    .mount_point()
                     .to_str()
                     .unwrap_or(i18n::t("unknown"))
                     .to_string();
                 let total = disk.total_space();
                 let used = total.saturating_sub(disk.available_space());
-                
-                // 获取设备名
+
                 let device_name = disk.name().to_string_lossy().to_string();
-                
-                // 计算读写速度
-                // 使用最小时间间隔避免除零
-                let min_elapsed_secs = elapsed_secs.max(0.001);
-                
-                let (read_speed, write_speed) = if let Some((current_read_sectors, current_write_sectors)) = current_stats.get(&device_name) {
-                    let last_read = last_read_sectors.get(&mount_point).unwrap_or(&0);
-                    let last_write = last_write_sectors.get(&mount_point).unwrap_or(&0);
-                    
-                    // 扇区大小通常是512字节
-                    let sector_size = 512;
-                    
-                    let read_speed = if *current_read_sectors >= *last_read {
-                        (((*current_read_sectors - *last_read) * sector_size) as f64 / min_elapsed_secs) as u64
+
+                const MIN_ELAPSED_SECS: f64 = 0.1;
+                let min_elapsed_secs = elapsed_secs.max(MIN_ELAPSED_SECS);
+
+                let (read_speed, write_speed) =
+                    if let Some((current_read_sectors, current_write_sectors)) =
+                        current_stats.get(&device_name)
+                    {
+                        let last_read = last_read_sectors.get(&mount_point).unwrap_or(&0);
+                        let last_write = last_write_sectors.get(&mount_point).unwrap_or(&0);
+
+                        const SECTOR_SIZE: u64 = 512;
+
+                        let read_speed = if *current_read_sectors >= *last_read {
+                            let bytes_read =
+                                (*current_read_sectors - *last_read).saturating_mul(SECTOR_SIZE);
+                            ((bytes_read as f64) / min_elapsed_secs).min(MAX_DISK_SPEED as f64)
+                                as u64
+                        } else {
+                            0
+                        };
+
+                        let write_speed = if *current_write_sectors >= *last_write {
+                            let bytes_written =
+                                (*current_write_sectors - *last_write).saturating_mul(SECTOR_SIZE);
+                            ((bytes_written as f64) / min_elapsed_secs).min(MAX_DISK_SPEED as f64)
+                                as u64
+                        } else {
+                            0
+                        };
+
+                        (read_speed, write_speed)
                     } else {
-                        0
+                        (0, 0)
                     };
-                    
-                    let write_speed = if *current_write_sectors >= *last_write {
-                        (((*current_write_sectors - *last_write) * sector_size) as f64 / min_elapsed_secs) as u64
-                    } else {
-                        0
-                    };
-                    
-                    (read_speed, write_speed)
-                } else {
-                    (0, 0)
-                };
-                
+
                 disks.push((mount_point, used, total, read_speed, write_speed));
             }
         }
-        
+
         Ok(())
     }
 
@@ -192,36 +239,41 @@ impl DiskData {
     fn read_disk_stats() -> Result<HashMap<String, (u64, u64)>> {
         let content = fs::read_to_string("/proc/diskstats")?;
         let mut stats = HashMap::new();
-        
+
         for line in content.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 14 {
-                let device_name = parts[2].to_string();
-                // 第6列：读取的扇区数（从0开始计数，所以是parts[5]）
-                let read_sectors = parts[5].parse::<u64>().unwrap_or(0);
-                // 第10列：写入的扇区数（从0开始计数，所以是parts[9]）
-                let write_sectors = parts[9].parse::<u64>().unwrap_or(0);
-                
+                let device_name = parts.get(2).unwrap_or(&"").to_string();
+                let read_sectors = parts
+                    .get(5)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let write_sectors = parts
+                    .get(9)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+
                 stats.insert(device_name, (read_sectors, write_sectors));
             }
         }
-        
+
         Ok(stats)
     }
 
     #[cfg(target_os = "windows")]
-    fn update_windows(&mut self) -> Result<()> {
-        use windows::core::*;
-        use wmi::{WMIConnection, COMLibrary};
+    fn update_disks_windows(
+        disks_info: &Disks,
+        disks: &mut Vec<(String, u64, u64, u64, u64)>,
+    ) -> Result<()> {
         use std::collections::HashMap;
+        use windows::core::*;
+        use wmi::{COMLibrary, WMIConnection};
 
-        // 初始化COM
         let com_con = COMLibrary::new()?;
         let wmi_con = WMIConnection::new(com_con)?;
 
-        // 查询逻辑磁盘信息（容量）
         let logical_disks: Vec<Win32_LogicalDisk> = wmi_con.query()?;
-        let mut disk_map: HashMap<String, (u64, u64)> = HashMap::new(); // 挂载点 -> (总大小, 已用)
+        let mut disk_map: HashMap<String, (u64, u64)> = HashMap::new();
         for disk in logical_disks {
             if let Some(device_id) = disk.DeviceID {
                 let mount_point = format!("{}:", device_id);
@@ -232,51 +284,23 @@ impl DiskData {
             }
         }
 
-        // 查询磁盘性能计数器（读写速度）
-        let perf_disks: Vec<Win32_PerfFormattedData_PerfDisk_LogicalDisk> = wmi_con.query()?;
-        let mut current_stats: HashMap<String, (u64, u64)> = HashMap::new(); // 挂载点 -> (读字节/秒, 写字节/秒)
-
-        for perf in perf_disks {
-            if let Some(name) = perf.Name {
-                // 名称可能是 "C:" 或 "_Total"
-                if name != "_Total" {
-                    let mount_point = name;
-                    let read_bytes_per_sec = perf.DiskReadBytesPersec.unwrap_or(0) as u64;
-                    let write_bytes_per_sec = perf.DiskWriteBytesPersec.unwrap_or(0) as u64;
-                    current_stats.insert(mount_point, (read_bytes_per_sec, write_bytes_per_sec));
-                }
-            }
-        }
-
-        // 合并数据
         for (mount_point, (total, used)) in disk_map {
-            let (read_speed, write_speed) = if let Some((curr_read, curr_write)) = current_stats.get(&mount_point) {
-                // 性能计数器直接给出每秒字节数，直接使用
-                (*curr_read, *curr_write)
-            } else {
-                (0, 0)
-            };
-
-            self.disks.push((mount_point, used, total, read_speed, write_speed));
+            disks.push((mount_point, used, total, 0, 0));
         }
 
         Ok(())
     }
+
+    #[cfg(target_os = "windows")]
+    fn update_windows(&mut self) -> Result<()> {
+        Self::update_disks_windows(&self.disks_info, &mut self.disks)
+    }
 }
 
-// Windows WMI 类型定义
 #[cfg(target_os = "windows")]
 #[derive(serde::Deserialize)]
 struct Win32_LogicalDisk {
     DeviceID: Option<String>,
     Size: Option<u64>,
     FreeSpace: Option<u64>,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(serde::Deserialize)]
-struct Win32_PerfFormattedData_PerfDisk_LogicalDisk {
-    Name: Option<String>,
-    DiskReadBytesPersec: Option<u64>,
-    DiskWriteBytesPersec: Option<u64>,
 }

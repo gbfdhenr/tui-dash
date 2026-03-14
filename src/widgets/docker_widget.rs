@@ -1,109 +1,125 @@
+use super::{block_style, default_style, highlight_style, warning_style, BLOCK_BORDERS};
+use crate::data::docker::{ContainerInfo, ContainerState, DockerData};
+use crate::i18n;
 use ratatui::{
-    prelude::{Alignment, Constraint, Rect, Style},
-    style::{Color, Modifier},
-    text::{Line, Span},
-    widgets::{
-        Block, Cell, Padding, Paragraph, Row, Table,
-    },
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, Row, Table},
+    Frame,
 };
 
-use crate::data::docker::DockerData;
-use crate::i18n;
-use super::{BLOCK_BORDERS, block_style, default_style, highlight_style, warning_style};
-
-pub fn render(f: &mut ratatui::Frame, area: Rect, data: &DockerData) {
-    // 修复：替换错误的 is_available 字段为 error.is_none()
-    if data.error.is_none() && data.containers.is_empty() {
+pub fn render(f: &mut Frame, area: Rect, data: &DockerData) {
+    if data.containers.is_empty() {
         let block = Block::default()
-            .title(format!(" {} ", i18n::t("docker_no_containers")))
+            .title(i18n::t("docker"))
             .borders(BLOCK_BORDERS)
-            .padding(Padding::new(1, 1, 1, 1))
             .style(block_style());
-        
-        let text = Paragraph::new(i18n::t("no_docker_containers_message"))
-            .alignment(Alignment::Center)
+        let paragraph = ratatui::widgets::Paragraph::new("No running containers")
+            .alignment(ratatui::layout::Alignment::Center)
             .block(block)
             .style(default_style());
-        
-        f.render_widget(text, area);
+        f.render_widget(paragraph, area);
         return;
     }
 
-    // 显示 Docker 连接错误
-    if let Some(error) = &data.error {
-        let block = Block::default()
+    let container_rows: Vec<Row> = data
+        .containers
+        .iter()
+        .map(|container| {
+            let state_style = match container.state {
+                ContainerState::Running => Style::default().fg(Color::Green),
+                ContainerState::Paused => Style::default().fg(Color::Yellow),
+                ContainerState::Restarting => Style::default().fg(Color::Yellow),
+                ContainerState::Exited => Style::default().fg(Color::Gray),
+                ContainerState::Dead => Style::default().fg(Color::Red),
+                ContainerState::Unknown => Style::default().fg(Color::Gray),
+            };
+
+            let cpu_style = if container.cpu_percent > 80.0 {
+                warning_style()
+            } else if container.cpu_percent > 50.0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                default_style()
+            };
+
+            let mem_style = if container.memory_percent > 80.0 {
+                warning_style()
+            } else if container.memory_percent > 50.0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                default_style()
+            };
+
+            Row::new(vec![
+                truncate_string(&container.name, 20),
+                container.image.clone(),
+                container.status.clone(),
+                format!("{:.1}%", container.cpu_percent),
+                format!("{:.1}MB", container.memory_usage_mb),
+                format!("{:.1}%", container.memory_percent),
+            ])
+            .style(state_style)
+        })
+        .collect();
+
+    let container_table = Table::new(
+        container_rows,
+        [
+            ratatui::layout::Constraint::Percentage(20),
+            ratatui::layout::Constraint::Percentage(20),
+            ratatui::layout::Constraint::Percentage(15),
+            ratatui::layout::Constraint::Percentage(10),
+            ratatui::layout::Constraint::Percentage(15),
+            ratatui::layout::Constraint::Percentage(20),
+        ],
+    )
+    .block(
+        Block::default()
+            .title(format!(" {} ", i18n::t("docker")))
             .borders(BLOCK_BORDERS)
-            .title(format!(" {} ", i18n::t("docker_error")))
-            .title_alignment(Alignment::Center)
-            .style(warning_style());
-        
-        let text = Paragraph::new(format!("{} {}", i18n::t("docker_connection_error"), error))
-            .block(block)
-            .alignment(Alignment::Center)
-            .style(default_style());
-        
-        f.render_widget(text, area);
-        return;
+            .style(block_style()),
+    )
+    .header(
+        Row::new(vec![
+            i18n::t("container_name"),
+            i18n::t("image"),
+            i18n::t("status"),
+            i18n::t("cpu_percent"),
+            i18n::t("memory_mb"),
+            i18n::t("memory_percent"),
+        ])
+        .style(highlight_style()),
+    );
+
+    f.render_widget(container_table, area);
+}
+
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if max_len == 0 {
+        return String::new();
     }
 
-    // 正常显示容器列表
-    let block = Block::default()
-        .title(format!(" {} ", i18n::t("docker_containers")))
-        .borders(BLOCK_BORDERS)
-        .style(block_style());
+    if s.chars().count() <= max_len {
+        return s.to_string();
+    }
 
-    let header_cells = [
-        i18n::t("name"),
-        i18n::t("status"),
-        i18n::t("cpu_percent"),
-        i18n::t("memory_percent"),
-        i18n::t("ports"),
-    ];
-    
-    let header_cells_iter = header_cells.iter()
-        .map(|h| {
-            Cell::from(Line::from(Span::styled(
-                *h,
-                highlight_style().add_modifier(Modifier::BOLD),
-            )))
-        });
-    let header = Row::new(header_cells_iter)
-        .style(Style::default().fg(Color::White))
-        .height(1)
-        .bottom_margin(1);
+    let mut result = String::new();
+    let mut char_count = 0;
 
-    let rows = data.containers.iter().map(|container| {
-        // 修复Docker状态识别bug：使用精确的状态字符串比较
-        let status_span = if container.status == "running" {
-            Span::styled(container.status.clone(), Style::default().fg(Color::Green))
-        } else {
-            Span::styled(container.status.clone(), Style::default().fg(Color::Yellow))
-        };
+    for c in s.chars() {
+        let char_width = if (c as u32) > 127 { 2 } else { 1 };
 
-        // 修复：内存使用率是百分比，无需转MB，直接显示百分比
-        let cpu_usage = format!("{:.1}%", container.cpu_usage);
-        let memory_usage = format!("{:.1}%", container.memory_usage);  // 修复单位错误
+        if char_count + char_width > max_len.saturating_sub(1) {
+            break;
+        }
 
-        let cells = [
-            Cell::from(container.name.clone()),
-            Cell::from(Line::from(status_span)),
-            Cell::from(cpu_usage),
-            Cell::from(memory_usage),
-            Cell::from(container.ports.clone()),
-        ];
-        Row::new(cells).height(1).bottom_margin(0)
-    });
+        result.push(c);
+        char_count += char_width;
+    }
 
-    let table = Table::new(rows, &[
-            Constraint::Percentage(30),
-            Constraint::Percentage(15),
-            Constraint::Percentage(10),
-            Constraint::Percentage(10),
-            Constraint::Percentage(35),
-        ])
-        .header(header)
-        .block(block)
-        .column_spacing(1);
-
-    f.render_widget(table, area);
+    if !result.is_empty() {
+        result.push('…');
+    }
+    result
 }

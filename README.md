@@ -2,10 +2,10 @@
 
 # TUI-Dash
 
-**一个用 Rust 编写的终端系统监控面板，提供简洁高效的实时系统信息查看。支持Windows和Linux**
+**一个用 Rust 编写的终端系统监控面板，提供简洁高效的实时系统信息查看。支持 Windows、Linux 和 macOS**
 
 **A terminal dashboard for system monitoring, written in Rust, providing a simple and efficient real-time system information viewer.**
-**Support Windows and Linux**
+**Support Windows, Linux and macOS**
 
 </div>
 
@@ -35,13 +35,11 @@
   - 接收/发送字节数（MB/KB）/ Received/Sent bytes (MB/KB)
   - 接收/发送速度 / Receive/Transmit speed
 
-- **Docker** / **Docker 容器**
-  - 运行中容器列表 / Running containers list
-  - 容器名称和 ID / Container name and ID
-  - 运行状态 / Running status
-  - CPU 使用率 / CPU usage percentage
-  - 内存使用率 / Memory usage percentage
-  - 端口映射 / Port mappings
+- **Process** / **进程监控**
+  - 进程列表显示 / Process list display
+  - 进程名称、PID、CPU、内存使用率 / Process name, PID, CPU, Memory usage
+  - 支持排序和搜索 / Support sorting and searching
+  - 实时更新 / Real-time updates
 
 - **Logs** / **系统日志**
   - 最近 500 行系统日志 / Last 500 lines of system logs
@@ -52,7 +50,6 @@
     - 系统日志（journalctl） / System logs (journalctl)
     - 内核日志 / Kernel logs
     - 错误日志 / Error logs
-    - Docker 容器日志 / Docker container logs
     - 引导日志 / Boot logs
 
 ### 多语言支持 / Multi-language Support
@@ -72,11 +69,25 @@
 
 ## 安装 / Installation
 
-### 方法一：从源码编译 / Build from Source
+### 方法一：使用安装脚本（推荐） / Using Install Script (Recommended)
+
+```bash
+# 下载安装脚本
+curl -sSL https://raw.githubusercontent.com/gbfhdner/tui-dash/main/install.sh -o install.sh
+
+# 运行安装脚本
+chmod +x install.sh
+./install.sh
+
+# 运行工具
+tui-dash
+```
+
+### 方法二：从源码编译 / Build from Source
 
 ```bash
 # 1. 克隆仓库 / Clone the repository
-git clone https://github.com/gbfdhenr/tui-dash.git
+git clone https://github.com/gbfhdner/tui-dash.git
 cd tui-dash
 
 # 2. 编译发布版本 / Build release version
@@ -85,15 +96,36 @@ cargo build --release
 # 3. 运行 / Run
 ./target/release/tui-dash
 ```
-方法二：使用 Cargo 安装 / Install via Cargo
+
+### 方法三：使用 Cargo 安装 / Install via Cargo
+
 ```bash
-cargo install tui-dash --git https://github.com/gbfdhenr/tui-dash
+cargo install tui-dash --git https://github.com/gbfhdner/tui-dash
 ```
+## 系统要求 / System Requirements
+
+### 必需依赖 / Required Dependencies
+- **Rust 工具链** (cargo, rustc) - 用于编译
+- **Git** - 用于克隆源码
+
+### 可选依赖 / Optional Dependencies
+- **Linux**: libssl-dev (Debian/Ubuntu) 或 openssl-devel (RHEL/Fedora)
+- **Windows**: 无需额外依赖
+- **macOS**: 无需额外依赖
+
+### 终端要求 / Terminal Requirements
+- 支持 UTF-8 编码
+- 支持 ANSI 颜色
+- 推荐使用现代终端：
+  - Linux: Alacritty, Kitty, GNOME Terminal
+  - Windows: Windows Terminal, PowerShell
+  - macOS: iTerm2, Terminal.app
+
 ---
 Windows 支持 / Windows Support
 从 1.0.0 版本开始，TUI-Dash 支持 Windows 10/11/Server 2016 及以上版本。在 Windows 上：
 
-CPU、内存、网络、Docker 功能通过跨平台库正常支持。
+CPU、内存、网络功能通过跨平台库正常支持。
 
 磁盘读写速度使用 WMI 性能计数器获取。
 
@@ -135,4 +167,3 @@ export LANG=zh_CN.UTF-8
 export LANG=en_US.UTF-8
 ./tui-dash
 ```
-Docker 需要安装 Docker Desktop 并启用，通过命名管道连接。
